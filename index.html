@@ -1185,8 +1185,8 @@
     ];
     cloudSpecs.forEach(s => addOrganicPineBough(...s));
 
-    // (D) 霧淞枯樹枝 (所有樹幹皆確實植根於台地雪面之下，絕無懸空)
-    function createWinterBranches(x, y, z, scale = 1, trunkHeight = 2.0) {
+    // (D) 霧淞枯樹枝 (拉開與塔簷的安全距離，避免細枝穿模重疊)
+    function createWinterBranches(x, y, z, scale = 1, trunkHeight = 2.0, leanX = 0.12) {
       const group = new THREE.Group();
       group.position.set(x, y, z);
       group.scale.setScalar(scale);
@@ -1195,8 +1195,8 @@
         if (depth <= 0) return;
         const end = start.clone().add(dir.clone().multiplyScalar(length));
         const mid = start.clone().lerp(end, 0.5);
-        mid.x += (Math.random() - 0.5) * 0.24;
-        mid.z += (Math.random() - 0.5) * 0.24;
+        mid.x += (Math.random() - 0.5) * 0.18;
+        mid.z += (Math.random() - 0.5) * 0.18;
 
         const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
         const tube = new THREE.Mesh(
@@ -1214,21 +1214,22 @@
         group.add(snowLine);
 
         for (let i = 0; i < 2; i++) {
+          // i=0 為向右分支，i=1 為向左分支，限制向左傾角避免靠近塔身
+          const angleZ = i === 0 ? -(0.28 + Math.random() * 0.22) : (0.20 + Math.random() * 0.18);
           const newDir = dir.clone().applyAxisAngle(
             new THREE.Vector3(0, 0, 1),
-            (i === 0 ? 1 : -1) * (0.35 + Math.random() * 0.3)
+            angleZ
           ).applyAxisAngle(
             new THREE.Vector3(0, 1, 0),
-            (Math.random() - 0.5) * 1.1
+            (Math.random() - 0.5) * 0.85
           ).normalize();
-          buildBranch(end, newDir, length * 0.74, radius * 0.65, depth - 1);
+          buildBranch(end, newDir, length * 0.72, radius * 0.65, depth - 1);
         }
       }
 
-      // 起點從 y = -0.35 (深入雪地基座) 向上生長至主幹頂端再分叉
       buildBranch(
         new THREE.Vector3(0, -0.35, 0),
-        new THREE.Vector3(0.12, 1, -0.05).normalize(),
+        new THREE.Vector3(leanX, 1, -0.05).normalize(),
         trunkHeight,
         0.105,
         4
@@ -1236,10 +1237,10 @@
       return group;
     }
 
-    // 右後方高大枯樹：樹根直接植於主石垣台地頂面 (upperTopY + 0.25)
-    scene.add(createWinterBranches(7.2, upperTopY + 0.25, -2.5, 1.35, 3.8));
-    scene.add(createWinterBranches(-5.4, upperTopY + 0.25, 2.0, 0.92, 1.8));
-    scene.add(createWinterBranches(-7.4, upperTopY + 0.25, 1.6, 0.82, 1.7));
+    // 右後方枯樹移至 x = 8.8, z = -3.2 並微向右傾 (leanX = 0.16)，與塔頂飛簷保持清晰間距
+    scene.add(createWinterBranches(8.8, upperTopY + 0.25, -3.2, 1.32, 3.7, 0.16));
+    scene.add(createWinterBranches(-5.4, upperTopY + 0.25, 2.0, 0.92, 1.8, -0.05));
+    scene.add(createWinterBranches(-7.4, upperTopY + 0.25, 1.6, 0.82, 1.7, -0.08));
 
     // (E) 漫天飛雪粒子系統
     const snowCount = 1600;
