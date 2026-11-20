@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>浮世繪雪景三重塔 — 寫實 PBR + SSAO 後處理 3D 場景</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1c2836;
+      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans TC", "PingFang TC", sans-serif;
+      touch-action: none;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #ui-wrapper {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    #toggle-btn {
+      background: rgba(24, 34, 46, 0.78);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #eef4fa;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      padding: 8px 15px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s ease, background 0.2s ease;
+    }
+    #toggle-btn:active {
+      transform: scale(0.95);
+    }
+    #control-panel {
+      margin-top: 8px;
+      width: 265px;
+      background: rgba(20, 29, 40, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 14px;
+      padding: 14px;
+      color: #e6eef7;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      display: none;
+      flex-direction: column;
+      gap: 11px;
+    }
+    #control-panel.open {
+      display: flex;
+    }
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #a8c7e6;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+    }
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .control-row label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #cbd8e6;
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #cbd8e6;
+      padding: 2px 0;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #6ea8dc;
+      cursor: pointer;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #6ea8dc;
+      cursor: pointer;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 4px;
+    }
+    .action-btn {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      padding: 7px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s;
+    }
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    .action-btn.recording {
+      background: #c93b3b;
+      border-color: #ff7676;
+    }
+    #title-badge {
+      position: fixed;
+      bottom: 14px;
+      left: 14px;
+      z-index: 10;
+      pointer-events: none;
+      background: rgba(20, 29, 40, 0.55);
+      backdrop-filter: blur(6px);
+      border-left: 3px solid #c94a4a;
+      padding: 6px 12px;
+      border-radius: 4px;
+      color: #eef4fa;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="title-badge">雪夜三重塔 · PBR + SSAO 物理渲染</div>
+
+  <div id="ui-wrapper">
+    <button id="toggle-btn">⚙️ 場景控制</button>
+    <div id="control-panel">
+      <div class="panel-title">PBR 光照與後處理管線</div>
+      <div class="control-row">
+        <label><span>暮雪天光強度</span><span id="val-light">1.15</span></label>
+        <input type="range" id="slider-light" min="0.4" max="2.2" step="0.05" value="1.15" />
+      </div>
+      <div class="control-row">
+        <label><span>降雪速度</span><span id="val-snow">1.0</span></label>
+        <input type="range" id="slider-snow" min="0" max="3.0" step="0.1" value="1.0" />
+      </div>
+      <div class="control-row">
+        <label><span>微風擺動</span><span id="val-wind">0.6</span></label>
+        <input type="range" id="slider-wind" min="0" max="2.0" step="0.1" value="0.6" />
+      </div>
+      <div class="toggle-row">
+        <span>SSAO 環境光遮蔽</span>
+        <input type="checkbox" id="chk-ssao" checked />
+      </div>
+      <div class="toggle-row">
+        <span>石燈籠物理輝光 (Bloom)</span>
+        <input type="checkbox" id="chk-bloom" checked />
+      </div>
+      <div class="btn-group">
+        <button class="action-btn" id="btn-ukiyoe-cam">恢復原畫視角</button>
+        <button class="action-btn" id="btn-record">錄製 6 秒短片</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // 1. 渲染器與 PBR 線性工作流
+    const container = document.getElementById('canvas-container');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.02;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x3a4d61);
+    scene.fog = new THREE.FogExp2(0x3e5266, 0.015);
+
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    // 攝影機設定 (微仰視浮世繪視角)
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 200);
+    const defaultCamPos = new THREE.Vector3(-5.2, 6.8, 25.5);
+    const defaultTarget = new THREE.Vector3(0.6, 8.6, -1.2);
+    camera.position.copy(defaultCamPos);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(defaultTarget);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI * 0.56;
+    controls.minDistance = 7;
+    controls.maxDistance = 50;
+    controls.update();
+
+    // 2. 後處理管線 (RenderPass -> SSAOPass -> UnrealBloomPass -> OutputPass)
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    ssaoPass.kernelRadius = 0.85;
+    ssaoPass.minDistance = 0.002;
+    ssaoPass.maxDistance = 0.12;
+    composer.addPass(ssaoPass);
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.32,
+      0.55,
+      0.86
+    );
+    composer.addPass(bloomPass);
+
+    const outputPass = new OutputPass();
+    composer.addPass(outputPass);
+
+    // 3. 程序化 PBR 貼圖
+    function createNoiseTexture(width, height, baseRGB, variation, scale = 1, drawCallback = null) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.createImageData(width, height);
+      const data = imgData.data;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const n = (Math.sin(x * 0.13 * scale) * Math.cos(y * 0.17 * scale) + (Math.random() - 0.5)) * variation;
+          data[idx] = Math.min(255, Math.max(0, baseRGB[0] + n));
+          data[idx + 1] = Math.min(255, Math.max(0, baseRGB[1] + n));
+          data[idx + 2] = Math.min(255, Math.max(0, baseRGB[2] + n));
+          data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      if (drawCallback) drawCallback(ctx, width, height);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      return tex;
+    }
+
+    function createStoneMaterial(repeatX, repeatY) {
+      const size = 512;
+      const colorCanvas = document.createElement('canvas');
+      const bumpCanvas = document.createElement('canvas');
+      colorCanvas.width = bumpCanvas.width = size;
+      colorCanvas.height = bumpCanvas.height = size;
+      const cCtx = colorCanvas.getContext('2d');
+      const bCtx = bumpCanvas.getContext('2d');
+
+      cCtx.fillStyle = '#2c3845';
+      cCtx.fillRect(0, 0, size, size);
+      bCtx.fillStyle = '#141414';
+      bCtx.fillRect(0, 0, size, size);
+
+      const cols = 8, rows = 8;
+      const cellW = size / cols, cellH = size / rows;
+      const pts = [];
+      for (let r = 0; r <= rows; r++) {
+        pts[r] = [];
+        for (let c = 0; c <= cols; c++) {
+          const jx = (c === 0 || c === cols) ? 0 : (Math.random() - 0.5) * cellW * 0.58;
+          const jy = (r === 0 || r === rows) ? 0 : (Math.random() - 0.5) * cellH * 0.58;
+          pts[r][c] = { x: c * cellW + jx, y: r * cellH + jy };
+        }
+      }
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const poly = [pts[r][c], pts[r][c + 1], pts[r + 1][c + 1], pts[r + 1][c]];
+          const cx = (poly[0].x + poly[1].x + poly[2].x + poly[3].x) / 4;
+          const cy = (poly[0].y + poly[1].y + poly[2].y + poly[3].y) / 4;
+
+          const shade = 148 + Math.floor(Math.random() * 52);
+          cCtx.beginPath();
+          bCtx.beginPath();
+          poly.forEach((p, i) => {
+            const sx = cx + (p.x - cx) * 0.89;
+            const sy = cy + (p.y - cy) * 0.89;
+            if (i === 0) { cCtx.moveTo(sx, sy); bCtx.moveTo(sx, sy); }
+            else { cCtx.lineTo(sx, sy); bCtx.lineTo(sx, sy); }
+          });
+          cCtx.closePath();
+          bCtx.closePath();
+
+          cCtx.fillStyle = `rgb(${shade - 10}, ${shade}, ${shade + 15})`;
+          cCtx.fill();
+          cCtx.lineWidth = 2.2;
+          cCtx.strokeStyle = 'rgba(235, 245, 255, 0.52)';
+          cCtx.stroke();
+
+          const bVal = 175 + Math.floor(Math.random() * 70);
+          bCtx.fillStyle = `rgb(${bVal},${bVal},${bVal})`;
+          bCtx.fill();
+        }
+      }
+
+      const map = new THREE.CanvasTexture(colorCanvas);
+      const bump = new THREE.CanvasTexture(bumpCanvas);
+      map.wrapS = map.wrapT = bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+      map.repeat.set(repeatX, repeatY);
+      bump.repeat.set(repeatX, repeatY);
+      map.colorSpace = THREE.SRGBColorSpace;
+
+      return new THREE.MeshStandardMaterial({
+        map,
+        bumpMap: bump,
+        bumpScale: 0.15,
+        roughness: 0.85,
+        metalness: 0.04
+      });
+    }
+
+    const snowBumpTex = createNoiseTexture(256, 256, [128, 128, 128], 42, 2.5);
+    const snowRoughTex = createNoiseTexture(256, 256, [152, 152, 152], 55, 3.0);
+
+    const redWoodTex = createNoiseTexture(256, 256, [146, 44, 48], 18, 0.4, (ctx, w, h) => {
+      ctx.fillStyle = 'rgba(35, 8, 10, 0.22)';
+      for (let i = 0; i < w; i += 5) ctx.fillRect(i, 0, 2, h);
+    });
+    redWoodTex.colorSpace = THREE.SRGBColorSpace;
+
+    // 4. PBR 材質庫
+    const materials = {
+      snow: new THREE.MeshPhysicalMaterial({
+        color: 0xf2f7fc,
+        roughness: 0.62,
+        roughnessMap: snowRoughTex,
+        bumpMap: snowBumpTex,
+        bumpScale: 0.04,
+        metalness: 0.0,
+        sheen: 0.36,
+        sheenColor: new THREE.Color(0xdbeaff),
+        sheenRoughness: 0.5
+      }),
+      redLacquer: new THREE.MeshStandardMaterial({
+        map: redWoodTex,
+        color: 0xa6343a,
+        roughness: 0.38,
+        metalness: 0.1
+      }),
+      darkTimber: new THREE.MeshStandardMaterial({
+        color: 0x20191b,
+        roughness: 0.65,
+        metalness: 0.06
+      }),
+      plasterWall: new THREE.MeshStandardMaterial({
+        color: 0xe6e9ed,
+        bumpMap: snowBumpTex,
+        bumpScale: 0.015,
+        roughness: 0.85,
+        metalness: 0.0
+      }),
+      bronzeSpire: new THREE.MeshStandardMaterial({
+        color: 0xc2bc9e,
+        roughness: 0.28,
+        metalness: 0.88
+      }),
+      darkRoofTile: new THREE.MeshStandardMaterial({
+        color: 0x2a313a,
+        roughness: 0.52,
+        metalness: 0.15
+      }),
+      mainStoneWall: createStoneMaterial(3.4, 1.4),
+      stairSideStone: createStoneMaterial(0.16, 0.16),
+      lanternStone: new THREE.MeshStandardMaterial({
+        color: 0x95a2b0,
+        bumpMap: snowBumpTex,
+        bumpScale: 0.05,
+        roughness: 0.80,
+        metalness: 0.05
+      }),
+      pineNeedle: new THREE.MeshStandardMaterial({
+        color: 0x21454b,
+        roughness: 0.74,
+        metalness: 0.02
+      }),
+      bark: new THREE.MeshStandardMaterial({
+        color: 0x282120,
+        roughness: 0.9,
+        metalness: 0.0
+      })
+    };
+
+    // 5. 光照系統
+    const hemiLight = new THREE.HemisphereLight(0xc2d8ee, 0x3b4959, 0.95);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xf0f7ff, 1.15);
+    dirLight.position.set(-14, 28, 18);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 2;
+    dirLight.shadow.camera.far = 70;
+    const d = 24;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
+
+    // 6. 場景模型建構
+
+    // (A) 地面雪地
+    const groundGeo = new THREE.PlaneGeometry(140, 140, 32, 32);
+    groundGeo.rotateX(-Math.PI / 2);
+    const ground = new THREE.Mesh(groundGeo, materials.snow);
+    ground.position.y = -2.2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const wallGroup = new THREE.Group();
+    scene.add(wallGroup);
+
+    // 上層主石垣台地
+    const upperWallH = 6.8;
+    const upperWall = new THREE.Mesh(
+      new THREE.BoxGeometry(22.0, upperWallH, 15.0),
+      materials.mainStoneWall
+    );
+    upperWall.position.set(2.75, -2.2 + upperWallH / 2, -3.5);
+    upperWall.castShadow = true;
+    upperWall.receiveShadow = true;
+    wallGroup.add(upperWall);
+
+    const upperTopY = -2.2 + upperWallH; // y = 4.6
+    const upperSnow = new THREE.Mesh(
+      new THREE.BoxGeometry(22.25, 0.32, 15.25),
+      materials.snow
+    );
+    upperSnow.position.set(2.75, upperTopY + 0.14, -3.5);
+    upperSnow.receiveShadow = true;
+    wallGroup.add(upperSnow);
+
+    // 通用點對點連續透雕石護欄
+    function createContinuousRail(p1, p2, bayCount, railHeight = 0.96, includeStartPost = true, includeEndPost = true) {
+      const group = new THREE.Group();
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dz = p2.z - p1.z;
+      const horizLen = Math.hypot(dx, dz);
+      const slopeLen = Math.hypot(horizLen, dy);
+      const yaw = Math.atan2(-dz, dx);
+      const pitch = Math.atan2(dy, horizLen);
+
+      const postW = 0.22;
+      const barH = 0.13;
+      const depth = 0.22;
+
+      const railSpan = slopeLen + postW * 0.5;
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      const midZ = (p1.z + p2.z) / 2;
+
+      const slopedFrame = new THREE.Group();
+      slopedFrame.position.set(midX, midY, midZ);
+      slopedFrame.rotation.y = yaw;
+      slopedFrame.rotation.z = pitch;
+
+      const cosP = Math.cos(pitch);
+      const topRail = new THREE.Mesh(new THREE.BoxGeometry(railSpan, barH, depth), materials.lanternStone);
+      topRail.position.y = railHeight * cosP;
+      topRail.castShadow = true;
+
+      const botRail = new THREE.Mesh(new THREE.BoxGeometry(railSpan, barH, depth), materials.lanternStone);
+      botRail.position.y = 0.14 * cosP;
+
+      const snowTop = new THREE.Mesh(new THREE.BoxGeometry(railSpan + 0.02, 0.075, depth + 0.03), materials.snow);
+      snowTop.position.y = (railHeight + barH * 0.5 + 0.03) * cosP;
+
+      slopedFrame.add(topRail, botRail, snowTop);
+
+      const baySlope = slopeLen / bayCount;
+      for (let i = 0; i < bayCount; i++) {
+        const bx = -slopeLen / 2 + (i + 0.5) * baySlope;
+        const innerW = baySlope - postW * cosP - 0.10;
+        const innerH = (railHeight - 0.34) * cosP;
+        if (innerW > 0.14) {
+          const fTop = new THREE.Mesh(new THREE.BoxGeometry(innerW, 0.07, depth * 0.68), materials.lanternStone);
+          fTop.position.set(bx, 0.22 * cosP + innerH, 0);
+          const fBot = new THREE.Mesh(new THREE.BoxGeometry(innerW, 0.07, depth * 0.68), materials.lanternStone);
+          fBot.position.set(bx, 0.22 * cosP, 0);
+          const fLeft = new THREE.Mesh(new THREE.BoxGeometry(0.07, innerH, depth * 0.68), materials.lanternStone);
+          fLeft.position.set(bx - innerW / 2 + 0.035, 0.22 * cosP + innerH / 2, 0);
+          const fRight = new THREE.Mesh(new THREE.BoxGeometry(0.07, innerH, depth * 0.68), materials.lanternStone);
+          fRight.position.set(bx + innerW / 2 - 0.035, 0.22 * cosP + innerH / 2, 0);
+          slopedFrame.add(fTop, fBot, fLeft, fRight);
+        }
+      }
+      group.add(slopedFrame);
+
+      for (let i = 0; i <= bayCount; i++) {
+        if (i === 0 && !includeStartPost) continue;
+        if (i === bayCount && !includeEndPost) continue;
+        const t = i / bayCount;
+        const px = p1.x + dx * t;
+        const py = p1.y + dy * t;
+        const pz = p1.z + dz * t;
+
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(postW, railHeight + 0.10, depth + 0.03),
+          materials.lanternStone
+        );
+        post.position.set(px, py + (railHeight + 0.10) / 2, pz);
+        post.rotation.y = yaw;
+        post.castShadow = true;
+
+        const postSnow = new THREE.Mesh(
+          new THREE.BoxGeometry(postW + 0.03, 0.075, depth + 0.05),
+          materials.snow
+        );
+        postSnow.position.set(px, py + railHeight + 0.13, pz);
+        postSnow.rotation.y = yaw;
+
+        group.add(post, postSnow);
+      }
+
+      return group;
+    }
+
+    const baseGroundY = -2.2;
+    const midLandingY = 1.4;
+    const stairWidth = 3.0;
+    const stairCenterX = -9.8;
+
+    // (1) 第一段石階
+    {
+      const startX = 7.5;
+      const endX = -8.3;
+      const run = startX - endX;
+      const rise = midLandingY - baseGroundY;
+      const steps = 15;
+      const stepD = run / steps;
+      const stepH = rise / steps;
+
+      const wedgeShape = new THREE.Shape();
+      wedgeShape.moveTo(0, 0);
+      wedgeShape.lineTo(run, 0);
+      wedgeShape.lineTo(run, rise);
+      wedgeShape.closePath();
+
+      const wedgeGeo = new THREE.ExtrudeGeometry(wedgeShape, {
+        depth: stairWidth,
+        bevelEnabled: false
+      });
+      wedgeGeo.rotateY(Math.PI);
+      const wedgeMesh = new THREE.Mesh(wedgeGeo, materials.stairSideStone);
+      wedgeMesh.position.set(startX, baseGroundY, 4.5 + stairWidth);
+      wedgeMesh.castShadow = true;
+      wedgeMesh.receiveShadow = true;
+      wallGroup.add(wedgeMesh);
+
+      for (let i = 0; i < steps; i++) {
+        const sy = baseGroundY + (i + 1) * stepH;
+        const sx = startX - (i + 0.5) * stepD;
+        const tread = new THREE.Mesh(
+          new THREE.BoxGeometry(stepD + 0.06, stepH + 0.08, stairWidth - 0.16),
+          materials.lanternStone
+        );
+        tread.position.set(sx, sy - stepH / 2, 6.0);
+        tread.receiveShadow = true;
+
+        const snowTread = new THREE.Mesh(
+          new THREE.BoxGeometry(stepD * 0.88, 0.08, stairWidth - 0.24),
+          materials.snow
+        );
+        snowTread.position.set(sx, sy + 0.03, 6.0);
+        snowTread.receiveShadow = true;
+        wallGroup.add(tread, snowTread);
+      }
+
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(startX, baseGroundY, 7.38),
+        new THREE.Vector3(endX, midLandingY, 7.38),
+        10, 0.96, true, true
+      ));
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(startX, baseGroundY, 4.62),
+        new THREE.Vector3(endX, midLandingY, 4.62),
+        10, 0.96, true, true
+      ));
+    }
+
+    // (2) 左側中轉平台
+    {
+      const midH = midLandingY - baseGroundY;
+      const midBase = new THREE.Mesh(
+        new THREE.BoxGeometry(3.0, midH, 3.0),
+        materials.mainStoneWall
+      );
+      midBase.position.set(stairCenterX, baseGroundY + midH / 2, 6.0);
+      midBase.castShadow = true;
+      midBase.receiveShadow = true;
+
+      const midSnow = new THREE.Mesh(
+        new THREE.BoxGeometry(3.04, 0.12, 3.04),
+        materials.snow
+      );
+      midSnow.position.set(stairCenterX, midLandingY + 0.04, 6.0);
+      midSnow.receiveShadow = true;
+      wallGroup.add(midBase, midSnow);
+
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-8.3, midLandingY, 7.38),
+        new THREE.Vector3(-11.18, midLandingY, 7.38),
+        2, 0.96, false, true
+      ));
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-11.18, midLandingY, 7.38),
+        new THREE.Vector3(-11.18, midLandingY, 4.5),
+        2, 0.96, false, true
+      ));
+    }
+
+    // (3) 第二段上轉折石階
+    {
+      const startZ = 4.5;
+      const endZ = -1.1;
+      const run = startZ - endZ;
+      const rise = upperTopY - midLandingY;
+      const baseDepth = upperTopY - baseGroundY;
+      const steps = 12;
+      const stepD = run / steps;
+      const stepH = rise / steps;
+
+      const sideWallShape = new THREE.Shape();
+      sideWallShape.moveTo(0, 0);
+      sideWallShape.lineTo(run, 0);
+      sideWallShape.lineTo(run, baseDepth);
+      sideWallShape.lineTo(0, midLandingY - baseGroundY);
+      sideWallShape.closePath();
+
+      const sideWallGeo = new THREE.ExtrudeGeometry(sideWallShape, {
+        depth: stairWidth,
+        bevelEnabled: false
+      });
+      sideWallGeo.rotateY(Math.PI / 2);
+      const sideWallMesh = new THREE.Mesh(sideWallGeo, materials.stairSideStone);
+      sideWallMesh.position.set(-11.3, baseGroundY, startZ);
+      sideWallMesh.castShadow = true;
+      sideWallMesh.receiveShadow = true;
+      wallGroup.add(sideWallMesh);
+
+      for (let i = 0; i < steps; i++) {
+        const sy = midLandingY + (i + 1) * stepH;
+        const sz = startZ - (i + 0.5) * stepD;
+        const tread = new THREE.Mesh(
+          new THREE.BoxGeometry(stairWidth - 0.16, stepH + 0.08, stepD + 0.06),
+          materials.lanternStone
+        );
+        tread.position.set(stairCenterX, sy - stepH / 2, sz);
+        tread.receiveShadow = true;
+
+        const snowTread = new THREE.Mesh(
+          new THREE.BoxGeometry(stairWidth - 0.24, 0.08, stepD * 0.88),
+          materials.snow
+        );
+        snowTread.position.set(stairCenterX, sy + 0.03, sz);
+        snowTread.receiveShadow = true;
+        wallGroup.add(tread, snowTread);
+      }
+
+      const topRailBaseY = upperTopY + 0.25;
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-11.18, midLandingY, startZ),
+        new THREE.Vector3(-11.18, topRailBaseY, endZ),
+        5, 0.96, false, true
+      ));
+
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-8.38, midLandingY, startZ),
+        new THREE.Vector3(-8.38, topRailBaseY, endZ),
+        5, 0.96, true, true
+      ));
+    }
+
+    // (4) 頂部入口轉折平台
+    {
+      const topRailBaseY = upperTopY + 0.25;
+      const entryBase = new THREE.Mesh(
+        new THREE.BoxGeometry(3.05, upperWallH, 3.1),
+        materials.mainStoneWall
+      );
+      entryBase.position.set(-9.775, baseGroundY + upperWallH / 2, -2.65);
+      entryBase.castShadow = true;
+      entryBase.receiveShadow = true;
+
+      const entrySnow = new THREE.Mesh(
+        new THREE.BoxGeometry(3.08, 0.32, 3.14),
+        materials.snow
+      );
+      entrySnow.position.set(-9.775, upperTopY + 0.14, -2.65);
+      entrySnow.receiveShadow = true;
+      wallGroup.add(entryBase, entrySnow);
+
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-11.18, topRailBaseY, -1.1),
+        new THREE.Vector3(-11.18, topRailBaseY, -4.08),
+        3, 0.96, false, true
+      ));
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-11.18, topRailBaseY, -4.08),
+        new THREE.Vector3(-8.38, topRailBaseY, -4.08),
+        3, 0.96, false, true
+      ));
+
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-8.38, topRailBaseY, -1.1),
+        new THREE.Vector3(-8.38, topRailBaseY, 3.85),
+        4, 0.96, false, true
+      ));
+      wallGroup.add(createContinuousRail(
+        new THREE.Vector3(-8.38, topRailBaseY, 3.85),
+        new THREE.Vector3(1.8, topRailBaseY, 3.85),
+        9, 0.96, false, true
+      ));
+    }
+
+    // 石燈籠
+    function createStoneLantern(x, y, z) {
+      const lantern = new THREE.Group();
+      lantern.position.set(x, y, z);
+
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.50, 0.34, 6), materials.lanternStone);
+      base.position.y = 0.17;
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.22, 1.05, 8), materials.lanternStone);
+      shaft.position.y = 0.84;
+      const platform = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.24, 0.22, 6), materials.lanternStone);
+      platform.position.y = 1.44;
+      const fireBox = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.27, 0.27, 0.36, 6),
+        new THREE.MeshStandardMaterial({
+          color: 0xffe8b8,
+          emissive: 0xff9d3b,
+          emissiveIntensity: 1.45,
+          roughness: 0.4
+        })
+      );
+      fireBox.position.y = 1.72;
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.58, 0.38, 6), materials.lanternStone);
+      roof.position.y = 2.08;
+      const snowCap = new THREE.Mesh(new THREE.ConeGeometry(0.57, 0.28, 6), materials.snow);
+      snowCap.position.y = 2.16;
+
+      lantern.add(base, shaft, platform, fireBox, roof, snowCap);
+      lantern.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+      return lantern;
+    }
+
+    wallGroup.add(createStoneLantern(-2.2, upperTopY + 0.25, 3.15));
+    wallGroup.add(createStoneLantern(-6.2, upperTopY + 0.25, 3.15));
+
+    // (B) 精緻化三重塔
+    const pagoda = new THREE.Group();
+    pagoda.position.set(2.4, upperTopY + 0.28, -2.0);
+    scene.add(pagoda);
+
+    const podium = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.45, 5.2), materials.lanternStone);
+    podium.position.y = 0.225;
+    podium.castShadow = true;
+    podium.receiveShadow = true;
+    const podiumSnow = new THREE.Mesh(new THREE.BoxGeometry(5.26, 0.1, 5.26), materials.snow);
+    podiumSnow.position.y = 0.48;
+    pagoda.add(podium, podiumSnow);
+
+    function createDetailedPagodaRoof(width, height, snowThickness) {
+      const roofGroup = new THREE.Group();
+
+      const segs = 36;
+      const geo = new THREE.PlaneGeometry(width, width, segs, segs);
+      geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position;
+
+      const calcRoofY = (x, z) => {
+        const nx = Math.abs(x) / (width * 0.5);
+        const nz = Math.abs(z) / (width * 0.5);
+        const edgeDist = Math.max(nx, nz);
+        const cornerFactor = Math.pow(nx * nz, 1.4);
+        const slope = Math.pow(Math.max(0, 1 - edgeDist), 1.5) * height;
+        const eaveLift = cornerFactor * (height * 0.75);
+        return slope + eaveLift;
+      };
+
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        pos.setY(i, calcRoofY(x, z));
+      }
+      geo.computeVertexNormals();
+
+      const roofMesh = new THREE.Mesh(geo, materials.darkRoofTile);
+      roofMesh.castShadow = true;
+      roofMesh.receiveShadow = true;
+      roofGroup.add(roofMesh);
+
+      for (let sx of [-1, 1]) {
+        for (let sz of [-1, 1]) {
+          const ridgePts = [];
+          for (let t = 0.12; t <= 1.02; t += 0.1) {
+            const rx = sx * (width * 0.5) * t;
+            const rz = sz * (width * 0.5) * t;
+            ridgePts.push(new THREE.Vector3(rx, calcRoofY(rx, rz) + 0.06, rz));
+          }
+          const ridgeCurve = new THREE.CatmullRomCurve3(ridgePts);
+          const ridgeTube = new THREE.Mesh(
+            new THREE.TubeGeometry(ridgeCurve, 12, 0.055, 6, false),
+            materials.darkRoofTile
+          );
+          roofGroup.add(ridgeTube);
+
+          const tipX = sx * (width * 0.49);
+          const tipZ = sz * (width * 0.49);
+          const tipY = calcRoofY(tipX, tipZ);
+          const bell = new THREE.Mesh(
+            new THREE.ConeGeometry(0.065, 0.18, 8),
+            materials.bronzeSpire
+          );
+          bell.position.set(tipX, tipY - 0.16, tipZ);
+          roofGroup.add(bell);
+        }
+      }
+
+      const snowGeo = geo.clone();
+      snowGeo.scale(0.955, 1.0, 0.955);
+      const snowMesh = new THREE.Mesh(snowGeo, materials.snow);
+      snowMesh.position.y = snowThickness;
+      snowMesh.castShadow = true;
+      snowMesh.receiveShadow = true;
+      roofGroup.add(snowMesh);
+
+      const halfW = width * 0.49;
+      const edgeBars = [
+        [0, 0.03, halfW, width * 0.98, 0.11, 0.11],
+        [0, 0.03, -halfW, width * 0.98, 0.11, 0.11],
+        [halfW, 0.03, 0, 0.11, 0.11, width * 0.98],
+        [-halfW, 0.03, 0, 0.11, 0.11, width * 0.98]
+      ];
+      edgeBars.forEach(b => {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(b[3], b[4], b[5]), materials.redLacquer);
+        bar.position.set(b[0], b[1], b[2]);
+        roofGroup.add(bar);
+      });
+
+      const rafterCount = 15;
+      const rafterSpan = width * 0.86;
+      for (let i = 0; i < rafterCount; i++) {
+        const offset = -rafterSpan / 2 + (rafterSpan / (rafterCount - 1)) * i;
+        const rGeo = new THREE.BoxGeometry(0.045, 0.055, width * 0.24);
+        const rFront = new THREE.Mesh(rGeo, materials.redLacquer);
+        rFront.position.set(offset, -0.04, width * 0.37);
+        rFront.rotation.x = 0.12;
+        const rBack = rFront.clone();
+        rBack.position.set(offset, -0.04, -width * 0.37);
+        rBack.rotation.x = -0.12;
+
+        const rRight = new THREE.Mesh(rGeo, materials.redLacquer);
+        rRight.rotation.y = Math.PI / 2;
+        rRight.position.set(width * 0.37, -0.04, offset);
+        rRight.rotation.z = -0.12;
+        const rLeft = rRight.clone();
+        rLeft.position.set(-width * 0.37, -0.04, offset);
+        rLeft.rotation.z = 0.12;
+
+        roofGroup.add(rFront, rBack, rRight, rLeft);
+      }
+
+      const bracketCount = 5;
+      const step = (width * 0.56) / (bracketCount - 1);
+      const start = -(width * 0.56) / 2;
+      const dist = width * 0.30;
+
+      for (let i = 0; i < bracketCount; i++) {
+        const offset = start + i * step;
+        for (let side = 0; side < 4; side++) {
+          const cluster = new THREE.Group();
+          const daito = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.22), materials.redLacquer);
+          daito.position.y = -0.24;
+          const hijiki = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.11, 0.36), materials.redLacquer);
+          hijiki.position.y = -0.12;
+          cluster.add(daito, hijiki);
+
+          if (side === 0) cluster.position.set(offset, 0, dist);
+          if (side === 1) cluster.position.set(offset, 0, -dist);
+          if (side === 2) { cluster.position.set(dist, 0, offset); cluster.rotation.y = Math.PI / 2; }
+          if (side === 3) { cluster.position.set(-dist, 0, offset); cluster.rotation.y = Math.PI / 2; }
+          roofGroup.add(cluster);
+        }
+      }
+
+      return roofGroup;
+    }
+
+    const tiers = [
+      { y: 0.50, coreW: 3.3, coreH: 2.55, roofW: 6.7, roofH: 1.48, snow: 0.13 },
+      { y: 3.65, coreW: 2.8, coreH: 2.25, roofW: 5.9, roofH: 1.38, snow: 0.12 },
+      { y: 6.50, coreW: 2.3, coreH: 2.00, roofW: 5.1, roofH: 1.32, snow: 0.12 }
+    ];
+
+    tiers.forEach((t) => {
+      const tierGroup = new THREE.Group();
+      tierGroup.position.y = t.y;
+
+      const coreWall = new THREE.Mesh(
+        new THREE.BoxGeometry(t.coreW - 0.06, t.coreH, t.coreW - 0.06),
+        materials.plasterWall
+      );
+      coreWall.position.y = t.coreH / 2;
+      coreWall.castShadow = true;
+      coreWall.receiveShadow = true;
+      tierGroup.add(coreWall);
+
+      const half = t.coreW / 2;
+      const colCoords = [-half, -half * 0.34, half * 0.34, half];
+
+      [0.12, t.coreH * 0.42, t.coreH * 0.82, t.coreH - 0.08].forEach(beamY => {
+        const beam = new THREE.Mesh(
+          new THREE.BoxGeometry(t.coreW + 0.12, 0.11, t.coreW + 0.12),
+          materials.redLacquer
+        );
+        beam.position.y = beamY;
+        tierGroup.add(beam);
+      });
+
+      for (let side = 0; side < 4; side++) {
+        const faceGroup = new THREE.Group();
+        faceGroup.rotation.y = (Math.PI / 2) * side;
+
+        colCoords.forEach(cx => {
+          const pillar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.105, 0.115, t.coreH, 12),
+            materials.redLacquer
+          );
+          pillar.position.set(cx, t.coreH / 2, half);
+          pillar.castShadow = true;
+          faceGroup.add(pillar);
+        });
+
+        const doorW = half * 0.62;
+        const doorH = t.coreH * 0.78;
+        const door = new THREE.Mesh(
+          new THREE.BoxGeometry(doorW, doorH, 0.06),
+          materials.redLacquer
+        );
+        door.position.set(0, doorH / 2 + 0.1, half - 0.01);
+        const doorSplit = new THREE.Mesh(
+          new THREE.BoxGeometry(0.03, doorH, 0.08),
+          materials.darkTimber
+        );
+        doorSplit.position.set(0, doorH / 2 + 0.1, half);
+        faceGroup.add(door, doorSplit);
+
+        [-half * 0.67, half * 0.67].forEach(winX => {
+          const winW = half * 0.56;
+          const winH = t.coreH * 0.36;
+          const winY = t.coreH * 0.62;
+          const winBg = new THREE.Mesh(
+            new THREE.BoxGeometry(winW, winH, 0.04),
+            materials.darkTimber
+          );
+          winBg.position.set(winX, winY, half - 0.01);
+          faceGroup.add(winBg);
+
+          for (let k = -2; k <= 2; k++) {
+            const mullion = new THREE.Mesh(
+              new THREE.BoxGeometry(0.028, winH, 0.06),
+              materials.redLacquer
+            );
+            mullion.position.set(winX + k * (winW / 5.5), winY, half);
+            faceGroup.add(mullion);
+          }
+        });
+
+        tierGroup.add(faceGroup);
+      }
+
+      const balW = t.coreW + 1.05;
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(balW, 0.16, balW), materials.darkTimber);
+      deck.position.y = 0.14;
+      deck.castShadow = true;
+      tierGroup.add(deck);
+
+      const deckSnow = new THREE.Mesh(new THREE.BoxGeometry(balW + 0.04, 0.04, balW + 0.04), materials.snow);
+      deckSnow.position.y = 0.23;
+      tierGroup.add(deckSnow);
+
+      const railH = 0.58;
+      const halfBal = balW / 2;
+      const railConfigs = [
+        [0, railH, halfBal, balW + 0.14, 0.07, 0.07],
+        [0, railH, -halfBal, balW + 0.14, 0.07, 0.07],
+        [halfBal, railH, 0, 0.07, 0.07, balW + 0.14],
+        [-halfBal, railH, 0, 0.07, 0.07, balW + 0.14]
+      ];
+      railConfigs.forEach(rc => {
+        const topR = new THREE.Mesh(new THREE.BoxGeometry(rc[3], rc[4], rc[5]), materials.redLacquer);
+        topR.position.set(rc[0], rc[1], rc[2]);
+        const midR = new THREE.Mesh(new THREE.BoxGeometry(rc[3] * 0.96, rc[4] * 0.75, rc[5] * 0.96), materials.redLacquer);
+        midR.position.set(rc[0], rc[1] * 0.56, rc[2]);
+        tierGroup.add(topR, midR);
+      });
+
+      const postOffsets = [-halfBal, 0, halfBal];
+      postOffsets.forEach(px => {
+        postOffsets.forEach(pz => {
+          if (Math.abs(px) < 0.1 && Math.abs(pz) < 0.1) return;
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, railH + 0.08, 8), materials.redLacquer);
+          post.position.set(px, railH / 2 + 0.12, pz);
+          tierGroup.add(post);
+
+          if (Math.abs(px) > 0.1 && Math.abs(pz) > 0.1) {
+            const giboshi = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), materials.bronzeSpire);
+            giboshi.scale.set(1, 1.35, 1);
+            giboshi.position.set(px, railH + 0.16, pz);
+            tierGroup.add(giboshi);
+          }
+        });
+      });
+
+      const roof = createDetailedPagodaRoof(t.roofW, t.roofH, t.snow);
+      roof.position.y = t.coreH - 0.05;
+      tierGroup.add(roof);
+
+      pagoda.add(tierGroup);
+    });
+
+    // 塔頂青銅相輪
+    const spireGroup = new THREE.Group();
+    spireGroup.position.y = 9.65;
+
+    const roban = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.32, 0.88), materials.bronzeSpire);
+    roban.position.y = 0.16;
+    const robanSnow = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.92), materials.snow);
+    robanSnow.position.y = 0.34;
+    const fukubachi = new THREE.Mesh(
+      new THREE.SphereGeometry(0.36, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      materials.bronzeSpire
+    );
+    fukubachi.position.y = 0.32;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.085, 3.8, 12), materials.bronzeSpire);
+    pole.position.y = 2.0;
+    spireGroup.add(roban, robanSnow, fukubachi, pole);
+
+    for (let i = 0; i < 9; i++) {
+      const r = 0.29 - i * 0.017;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.028, 8, 24), materials.bronzeSpire);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.85 + i * 0.23;
+      spireGroup.add(ring);
+    }
+
+    for (let a = 0; a < 4; a++) {
+      const suien = new THREE.Mesh(
+        new THREE.ConeGeometry(0.16, 0.65, 4),
+        materials.bronzeSpire
+      );
+      suien.position.set(Math.cos(a * Math.PI / 2) * 0.11, 3.25, Math.sin(a * Math.PI / 2) * 0.11);
+      suien.rotation.z = Math.cos(a * Math.PI / 2) * -0.18;
+      suien.rotation.x = Math.sin(a * Math.PI / 2) * 0.18;
+      spireGroup.add(suien);
+    }
+
+    const jewel = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 14), materials.bronzeSpire);
+    jewel.scale.set(1, 1.4, 1);
+    jewel.position.y = 3.88;
+    spireGroup.add(jewel);
+    pagoda.add(spireGroup);
+
+    // (C) 前景右側覆雪古松
+    const pineTree = new THREE.Group();
+    pineTree.position.set(6.4, 2.0, 2.4);
+    scene.add(pineTree);
+
+    const trunkCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(1.4, -4.2, 0.6),
+      new THREE.Vector3(0.5, -0.5, 0.3),
+      new THREE.Vector3(-0.3, 3.0, -0.1),
+      new THREE.Vector3(0.2, 6.2, -0.4)
+    ]);
+    const trunkMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(trunkCurve, 16, 0.38, 10, false),
+      materials.bark
+    );
+    trunkMesh.castShadow = true;
+    pineTree.add(trunkMesh);
+
+    const foliageClusters = [];
+    function addOrganicPineBough(x, y, z, rx, ry, rz) {
+      const bough = new THREE.Group();
+      bough.position.set(x, y, z);
+
+      const subOffsets = [
+        [0, 0, 0, 1.0],
+        [-rx * 0.45, -0.08, rz * 0.25, 0.72],
+        [rx * 0.45, -0.05, -rz * 0.2, 0.75],
+        [0.1, -0.1, rz * 0.45, 0.68]
+      ];
+
+      subOffsets.forEach(([ox, oy, oz, s]) => {
+        const needleGeo = new THREE.IcosahedronGeometry(1, 1);
+        const needle = new THREE.Mesh(needleGeo, materials.pineNeedle);
+        needle.scale.set(rx * s, ry * s, rz * s);
+        needle.position.set(ox, oy, oz);
+        needle.rotation.set(Math.random(), Math.random(), Math.random());
+        needle.castShadow = true;
+        needle.receiveShadow = true;
+        bough.add(needle);
+
+        const snowGeo = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.52);
+        const snow = new THREE.Mesh(snowGeo, materials.snow);
+        snow.scale.set(rx * s * 1.04, ry * s * 0.85, rz * s * 1.04);
+        snow.position.set(ox, oy + ry * s * 0.25, oz);
+        snow.castShadow = true;
+        snow.receiveShadow = true;
+        bough.add(snow);
+      });
+
+      pineTree.add(bough);
+      foliageClusters.push({ mesh: bough, baseRotZ: bough.rotation.z, phase: x + y });
+    }
+
+    const cloudSpecs = [
+      [-1.7, 7.5, -0.6, 1.45, 0.62, 1.25],
+      [0.5, 8.1, -0.9, 1.65, 0.68, 1.35],
+      [-2.7, 6.1, 0.1, 1.55, 0.65, 1.30],
+      [-0.3, 6.4, 0.3, 1.80, 0.72, 1.45],
+      [1.8, 6.7, -0.3, 1.50, 0.64, 1.25],
+      [-3.3, 4.5, 0.6, 1.60, 0.68, 1.35],
+      [-0.9, 4.7, 0.9, 1.90, 0.75, 1.50],
+      [1.5, 5.0, 0.4, 1.70, 0.68, 1.40],
+      [-2.1, 2.9, 1.1, 1.75, 0.72, 1.45],
+      [0.6, 3.1, 1.0, 1.95, 0.78, 1.55],
+      [2.4, 3.4, 0.2, 1.55, 0.65, 1.30],
+      [-1.1, 1.3, 1.2, 1.65, 0.68, 1.35],
+      [1.3, 1.5, 1.1, 1.85, 0.72, 1.45]
+    ];
+    cloudSpecs.forEach(s => addOrganicPineBough(...s));
+
+    // (D) 霧淞枯樹枝 (所有樹幹皆確實植根於台地雪面之下，絕無懸空)
+    function createWinterBranches(x, y, z, scale = 1, trunkHeight = 2.0) {
+      const group = new THREE.Group();
+      group.position.set(x, y, z);
+      group.scale.setScalar(scale);
+
+      function buildBranch(start, dir, length, radius, depth) {
+        if (depth <= 0) return;
+        const end = start.clone().add(dir.clone().multiplyScalar(length));
+        const mid = start.clone().lerp(end, 0.5);
+        mid.x += (Math.random() - 0.5) * 0.24;
+        mid.z += (Math.random() - 0.5) * 0.24;
+
+        const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+        const tube = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 6, radius, 6, false),
+          materials.bark
+        );
+        tube.castShadow = true;
+        group.add(tube);
+
+        const snowLine = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 6, radius * 0.72, 5, false),
+          materials.snow
+        );
+        snowLine.position.y = radius * 0.65;
+        group.add(snowLine);
+
+        for (let i = 0; i < 2; i++) {
+          const newDir = dir.clone().applyAxisAngle(
+            new THREE.Vector3(0, 0, 1),
+            (i === 0 ? 1 : -1) * (0.35 + Math.random() * 0.3)
+          ).applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            (Math.random() - 0.5) * 1.1
+          ).normalize();
+          buildBranch(end, newDir, length * 0.74, radius * 0.65, depth - 1);
+        }
+      }
+
+      // 起點從 y = -0.35 (深入雪地基座) 向上生長至主幹頂端再分叉
+      buildBranch(
+        new THREE.Vector3(0, -0.35, 0),
+        new THREE.Vector3(0.12, 1, -0.05).normalize(),
+        trunkHeight,
+        0.105,
+        4
+      );
+      return group;
+    }
+
+    // 右後方高大枯樹：樹根直接植於主石垣台地頂面 (upperTopY + 0.25)
+    scene.add(createWinterBranches(7.2, upperTopY + 0.25, -2.5, 1.35, 3.8));
+    scene.add(createWinterBranches(-5.4, upperTopY + 0.25, 2.0, 0.92, 1.8));
+    scene.add(createWinterBranches(-7.4, upperTopY + 0.25, 1.6, 0.82, 1.7));
+
+    // (E) 漫天飛雪粒子系統
+    const snowCount = 1600;
+    const snowGeo = new THREE.BufferGeometry();
+    const snowPositions = new Float32Array(snowCount * 3);
+    const snowVelocities = new Float32Array(snowCount);
+    const snowDrift = new Float32Array(snowCount);
+
+    for (let i = 0; i < snowCount; i++) {
+      snowPositions[i * 3] = (Math.random() - 0.5) * 48;
+      snowPositions[i * 3 + 1] = Math.random() * 28;
+      snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 44;
+      snowVelocities[i] = 0.8 + Math.random() * 1.4;
+      snowDrift[i] = Math.random() * Math.PI * 2;
+    }
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
+
+    const flakeCanvas = document.createElement('canvas');
+    flakeCanvas.width = 32;
+    flakeCanvas.height = 32;
+    const fCtx = flakeCanvas.getContext('2d');
+    const grad = fCtx.createRadialGradient(16, 16, 2, 16, 16, 15);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.6, 'rgba(240, 248, 255, 0.85)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    fCtx.fillStyle = grad;
+    fCtx.fillRect(0, 0, 32, 32);
+
+    const snowMat = new THREE.PointsMaterial({
+      size: 0.22,
+      map: new THREE.CanvasTexture(flakeCanvas),
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false
+    });
+    scene.add(new THREE.Points(snowGeo, snowMat));
+
+    // 7. UI 控制與後處理切換
+    const toggleBtn = document.getElementById('toggle-btn');
+    const controlPanel = document.getElementById('control-panel');
+    const uiWrapper = document.getElementById('ui-wrapper');
+
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      controlPanel.classList.toggle('open');
+    });
+
+    window.addEventListener('pointerdown', (e) => {
+      if (!uiWrapper.contains(e.target) && controlPanel.classList.contains('open')) {
+        controlPanel.classList.remove('open');
+      }
+    });
+
+    let snowSpeed = 1.0;
+    let windStrength = 0.6;
+
+    document.getElementById('slider-light').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      dirLight.intensity = v;
+      hemiLight.intensity = v * 0.82;
+      document.getElementById('val-light').textContent = v.toFixed(2);
+    });
+
+    document.getElementById('slider-snow').addEventListener('input', (e) => {
+      snowSpeed = parseFloat(e.target.value);
+      document.getElementById('val-snow').textContent = snowSpeed.toFixed(1);
+    });
+
+    document.getElementById('slider-wind').addEventListener('input', (e) => {
+      windStrength = parseFloat(e.target.value);
+      document.getElementById('val-wind').textContent = windStrength.toFixed(1);
+    });
+
+    document.getElementById('chk-ssao').addEventListener('change', (e) => {
+      ssaoPass.enabled = e.target.checked;
+    });
+
+    document.getElementById('chk-bloom').addEventListener('change', (e) => {
+      bloomPass.enabled = e.target.checked;
+    });
+
+    document.getElementById('btn-ukiyoe-cam').addEventListener('click', () => {
+      camera.position.copy(defaultCamPos);
+      controls.target.copy(defaultTarget);
+      controls.update();
+    });
+
+    const btnRecord = document.getElementById('btn-record');
+    let isRecording = false;
+    btnRecord.addEventListener('click', () => {
+      if (isRecording) return;
+      const stream = renderer.domElement.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'ukiyoe-snow-pagoda-pbr-ssao.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+        isRecording = false;
+        btnRecord.textContent = '錄製 6 秒短片';
+        btnRecord.classList.remove('recording');
+      };
+
+      isRecording = true;
+      btnRecord.textContent = '錄製中 (6s)...';
+      btnRecord.classList.add('recording');
+      recorder.start();
+      setTimeout(() => recorder.stop(), 6000);
+    });
+
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      ssaoPass.setSize(w, h);
+      bloomPass.setSize(w, h);
+    });
+
+    // 8. 動畫迴圈
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
+
+      if (snowSpeed > 0) {
+        const posAttr = snowGeo.attributes.position;
+        for (let i = 0; i < snowCount; i++) {
+          let y = posAttr.getY(i) - snowVelocities[i] * snowSpeed * dt * 2.2;
+          let x = posAttr.getX(i) + Math.sin(elapsed * 1.2 + snowDrift[i]) * 0.015 * windStrength;
+          if (y < -2.2) {
+            y = 26;
+            x = (Math.random() - 0.5) * 48;
+          }
+          posAttr.setY(i, y);
+          posAttr.setX(i, x);
+        }
+        posAttr.needsUpdate = true;
+      }
+
+      foliageClusters.forEach(item => {
+        item.mesh.rotation.z = item.baseRotZ + Math.sin(elapsed * 1.4 + item.phase) * 0.016 * windStrength;
+      });
+
+      controls.update();
+      composer.render();
+    }
+
+    animate();
+  </script>
+</body>
+</html>
